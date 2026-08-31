@@ -1,8 +1,69 @@
-# NGE Deployment Guide
+# NGE Deployment Guide for Laravel
 
-Agent-oriented blueprint for adding a repeatable Docker deployment to a PHP/Laravel-style application.
+> [!IMPORTANT]
+> **THIS GUIDE IS SPECIFICALLY FOR LARAVEL APPLICATIONS.** It assumes Laravel Artisan, Composer, a Vite/PNPM frontend, Laravel Horizon-style queue workers, Laravel's scheduler, and Laravel writable paths such as `storage/` and `bootstrap/cache/`.
 
-This repository deliberately contains **generic examples**, not a turnkey application. An implementation agent must inspect the target application, replace placeholders, select a database, and validate the result before deployment.
+This is an agent-oriented blueprint for adding a repeatable Docker deployment to a **Laravel project**. It deliberately contains generic Laravel examples, not a turnkey application. An implementation agent must inspect the target Laravel version and architecture, replace placeholders, ask the human for deployment and database choices, and validate the result before deployment.
+
+It is not a generic PHP, Symfony, WordPress, Node.js, or framework-neutral Docker guide. Agents must not apply it unchanged to non-Laravel repositories.
+
+## Repository directory structure
+
+```text
+nge-guide/
+├── README.md
+│   └── Entry point for humans and agents: Laravel scope, required
+│       interview, deployment-mode comparison, and verification rules.
+├── requirements/
+│   └── agent-implementation.md
+│       └── Mandatory agent contract: Laravel discovery, human questions,
+│           invariants, implementation rules, tests, and handoff content.
+└── examples/
+    ├── full-source/
+    │   ├── .dockerignore
+    │   │   └── Example exclusions for a Laravel build context.
+    │   ├── .env.example.docker
+    │   │   └── Safe Laravel/Compose environment-variable template.
+    │   ├── Dockerfile
+    │   │   └── Laravel PHP runtime plus Composer and Vite asset stages.
+    │   ├── docker-compose.yml
+    │   │   └── Easy deployment with the Laravel checkout bind-mounted.
+    │   ├── nge
+    │   │   └── Laravel operator commands wrapping Compose, Artisan,
+    │   │       Composer, PNPM, migrations, health, and code updates.
+    │   ├── nginx.conf
+    │   │   └── Nginx gateway forwarding requests to the Laravel core.
+    │   └── runtime/.gitkeep
+    │       └── Placeholder for runtime state when an implementation needs it.
+    ├── registry/
+    │   ├── .dockerignore
+    │   │   └── Excludes Laravel secrets, dependencies, and runtime data.
+    │   ├── .env.example.docker
+    │   │   └── Laravel runtime plus registry/image coordinates.
+    │   ├── Dockerfile
+    │   │   └── Self-contained production Laravel image example.
+    │   ├── ci-build-push.example.yml
+    │   │   └── Example GitHub Actions image build and registry push.
+    │   ├── docker-compose.yml
+    │   │   └── Pull-only runtime deployment with no source-code mount.
+    │   ├── nge
+    │   │   └── Laravel image build, push, deploy, migrate, health, and
+    │   │       immutable-tag rollback commands.
+    │   ├── nginx.conf
+    │   │   └── Runtime Nginx gateway configuration.
+    │   └── runtime/.gitkeep
+    │       └── Parent for persistent `storage` and `bootstrap/cache` mounts.
+    └── shared/
+        ├── .dockerignore
+        ├── Dockerfile
+        └── nginx.conf
+            └── Canonical generic Laravel building blocks copied into and
+                customized within the selected deployment implementation.
+```
+
+### Why examples are duplicated
+
+Each deployment-mode directory is intentionally copyable as a starting package. `examples/shared/` identifies the canonical concepts common to both modes, while each mode contains a complete working reference that an agent can copy and then customize inside a Laravel repository. An implementation should select **one** mode; it should not install both Compose files into the target project unless the human explicitly requests both.
 
 ## Deliverables
 
@@ -10,7 +71,7 @@ This repository deliberately contains **generic examples**, not a turnkey applic
 |---|---|
 | `examples/full-source/` | Simple deployment: source code is present on the host and bind-mounted into runtime containers. |
 | `examples/registry/` | Complex deployment: CI/build host publishes an immutable image; deployment host pulls it and mounts only runtime state/config. |
-| `examples/shared/Dockerfile` | Generic multi-stage production image example. |
+| `examples/shared/Dockerfile` | Generic multi-stage Laravel production image example. |
 | `examples/shared/nginx.conf` | Generic gateway configuration. |
 | `requirements/agent-implementation.md` | Mandatory agent workflow and acceptance criteria. |
 
@@ -24,7 +85,7 @@ or:
 
 > Implement `nge-guide` in `<public-repository-name>`.
 
-the agent must inspect the project and then ask the human the unresolved architecture questions **before writing deployment files**. At minimum:
+the agent must first confirm that the target is Laravel, inspect its structure, and then ask the human the unresolved architecture questions **before writing deployment files**. At minimum:
 
 1. **Deployment model:** full-source/easy deployment or container-registry deployment?
 2. **Database:** PostgreSQL or MySQL?
@@ -36,7 +97,7 @@ The agent should recommend a default based on evidence from the project, but mus
 
 Example first response after inspecting the target:
 
-> I found a PHP application with a queue worker and persistent uploads. Before I implement the deployment, please choose:
+> I confirmed this is a Laravel application with an Artisan scheduler, a queue worker, and persistent uploads. Before I implement the deployment, please choose:
 >
 > 1. Full-source/easy deployment, or container-registry deployment?
 > 2. PostgreSQL, or MySQL?
@@ -144,14 +205,14 @@ Before an implementation is considered complete, an agent must resolve:
 - `.env` is runtime-only and ignored by Git.
 - Never bake `.env`, registry credentials, SSH keys, or production certificates into an image.
 - Prefer secret files or the deployment platform's secret store where available.
-- `nge` supports `VAR_FILE` through its `file_env` helper for selected values an implementation chooses to wire in.
+- If file-backed secrets are required, the implementing agent should add and test an explicit `VAR_FILE`/Docker-secrets integration rather than assuming it exists.
 
 ## Verification standard
 
 A deployment is not complete because `docker compose up -d` returned zero. It must prove:
 
 - Compose interpolation/config validation succeeds;
-- exactly one database profile is active;
+- the generated Laravel deployment contains only the human-approved database implementation;
 - containers become healthy and remain running;
 - the HTTP health endpoint responds successfully;
 - a migration runs successfully and only once per release;
@@ -162,6 +223,6 @@ A deployment is not complete because `docker compose up -d` returned zero. It mu
 
 See the full checklist in `requirements/agent-implementation.md`.
 
-## Repository status
+## Repository
 
-The intended future remote is a **private** repository named `digital-entropy/nge-guide`. This local repository does not create or push that remote until explicitly approved.
+This guide is maintained in the private repository `digital-entropy/nge-guide`.

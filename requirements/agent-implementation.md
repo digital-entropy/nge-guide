@@ -1,8 +1,10 @@
-# Agent implementation requirements
+# Laravel agent implementation requirements
+
+> **Scope: Laravel only.** Confirm the target repository is a Laravel application before using this guide. The examples assume `artisan`, Composer, Laravel migrations, Laravel queue/scheduler commands, and Laravel writable directories. Stop and tell the human if the target is not Laravel rather than forcing these templates onto another framework.
 
 ## Mission
 
-Adapt this blueprint to a target application while preserving two supported deployment patterns: full-source host deployment and registry artifact deployment. Do not blindly copy values from the examples.
+Adapt this blueprint to a target Laravel application while preserving two supported deployment patterns: full-source host deployment and registry artifact deployment. Do not blindly copy values from the examples.
 
 ## Mandatory human interview
 
@@ -23,7 +25,7 @@ Once answered, generate a concrete deployment for those choices. Remove unselect
 
 The agent must inspect and record:
 
-1. Runtime/framework versions and package lock files.
+1. Laravel, PHP, Composer, Node.js, and package-manager versions and lock files.
 2. Existing start command, queue worker, scheduler, and health endpoint.
 3. Required PHP extensions and OS packages.
 4. Existing writable paths, uploads, generated files, and symlinks.
