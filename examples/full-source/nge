@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+IFS=$'\n\t'
+
+ENV_FILE="${NGE_ENV_FILE:-.env}"
+COMPOSE_FILE="${NGE_COMPOSE_FILE:-docker-compose.yml}"
+
+load_env() {
+  [[ -f "$ENV_FILE" ]] || { echo "Missing $ENV_FILE; copy .env.example.docker to .env" >&2; exit 1; }
+  set -a
+  # shellcheck disable=SC1090
+  source "$ENV_FILE"
+  set +a
+}
+
+compose() { load_env; docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" "$@"; }
+doctor() { command -v docker >/dev/null; docker compose version; [[ -f Dockerfile && -f nginx.conf ]]; }
+config() { compose config; }
+db:select() {
+  local db="${1:-}"
+  case "$db" in
+    postgres) export COMPOSE_PROFILES=postgres DB_CONNECTION=pgsql DB_HOST=postgres DB_PORT=5432 ;;
+    mysql) export COMPOSE_PROFILES=mysql DB_CONNECTION=mysql DB_HOST=mysql DB_PORT=3306 ;;
+    *) echo "Usage: ./nge db:select postgres|mysql" >&2; return 2 ;;
+  esac
+  echo "Selected $db for this command shell. Persist matching values in $ENV_FILE."
+}
+up() { compose up -d --build "$@"; }
+down() { compose down "$@"; }
+status() { compose ps; }
+health() { load_env; curl --fail --show-error --silent "${HEALTHCHECK_URL:-http://localhost:${APP_PORT:-8080}/healthz}"; echo; }
+shell() { compose exec core bash; }
+artisan() { compose exec core php artisan "$@"; }
+composer() { compose run --rm core composer "$@"; }
+pnpm() { compose run --rm core pnpm "$@"; }
+psql:cli() { compose exec postgres sh -lc 'PGPASSWORD="$DB_PASSWORD" exec psql -U "$DB_USERNAME" -d "$DB_DATABASE"'; }
+mysql:cli() { compose exec mysql sh -lc 'exec mysql -u"$DB_USERNAME" -p"$DB_PASSWORD" "$DB_DATABASE"'; }
+install() { composer install --no-dev --no-interaction; pnpm install --frozen-lockfile; pnpm run build; artisan migrate --force; }
+code:update() {
+  git diff --quiet && git diff --cached --quiet || { echo "Refusing dirty checkout" >&2; return 1; }
+  git pull --ff-only
+  install
+  compose restart core horizon scheduler
+  compose up -d
+  health
+}
+help() { printf '%s\n' 'Usage: ./nge <doctor|config|db:select|up|down|status|health|shell|artisan|composer|pnpm|psql:cli|mysql:cli|install|code:update>'; }
+
+cmd="${1:-help}"; shift || true
+declare -F "$cmd" >/dev/null || { echo "Unknown command: $cmd" >&2; help; exit 2; }
+"$cmd" "$@"

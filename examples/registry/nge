@@ -1,0 +1,69 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+IFS=$'\n\t'
+
+ENV_FILE="${NGE_ENV_FILE:-.env}"
+COMPOSE_FILE="${NGE_COMPOSE_FILE:-docker-compose.yml}"
+
+load_env() {
+  [[ -f "$ENV_FILE" ]] || { echo "Missing $ENV_FILE; copy .env.example.docker to .env" >&2; exit 1; }
+  set -a
+  # shellcheck disable=SC1090
+  source "$ENV_FILE"
+  set +a
+}
+compose() { load_env; docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" "$@"; }
+image_ref() { load_env; printf '%s/%s:%s' "$REGISTRY" "$IMAGE_NAME" "${1:-$IMAGE_TAG}"; }
+doctor() { command -v docker >/dev/null; docker compose version; [[ -f nginx.conf ]]; mkdir -p runtime/storage runtime/bootstrap-cache; }
+config() { compose config; }
+db:select() {
+  case "${1:-}" in
+    postgres) export COMPOSE_PROFILES=postgres DB_CONNECTION=pgsql DB_HOST=postgres DB_PORT=5432 ;;
+    mysql) export COMPOSE_PROFILES=mysql DB_CONNECTION=mysql DB_HOST=mysql DB_PORT=3306 ;;
+    *) echo "Usage: ./nge db:select postgres|mysql" >&2; return 2 ;;
+  esac
+  echo "Persist the matching profile and DB values in $ENV_FILE."
+}
+image:build() {
+  load_env; local tag="${IMAGE_TAG}"; [[ "${1:-}" == --tag ]] && tag="$2"
+  docker build --platform "${PLATFORM:-linux/amd64}" -f Dockerfile -t "${REGISTRY}/${IMAGE_NAME}:${tag}" .
+}
+image:push() {
+  load_env; local tag="${IMAGE_TAG}"; [[ "${1:-}" == --tag ]] && tag="$2"
+  docker push "${REGISTRY}/${IMAGE_NAME}:${tag}"
+}
+pull() { compose pull core horizon scheduler; }
+up() { compose up -d "$@"; }
+down() { compose down "$@"; }
+status() { compose ps; }
+health() { load_env; curl --fail --show-error --silent "${HEALTHCHECK_URL:-http://localhost:${APP_PORT:-8080}/healthz}"; echo; }
+artisan() { compose run --rm core php artisan "$@"; }
+psql:cli() { compose exec postgres sh -lc 'PGPASSWORD="$DB_PASSWORD" exec psql -U "$DB_USERNAME" -d "$DB_DATABASE"'; }
+mysql:cli() { compose exec mysql sh -lc 'exec mysql -u"$DB_USERNAME" -p"$DB_PASSWORD" "$DB_DATABASE"'; }
+deploy() {
+  doctor
+  config >/dev/null
+  pull
+  load_env
+  case "${COMPOSE_PROFILES:-}" in
+    postgres) compose up -d postgres redis ;;
+    mysql) compose up -d mysql redis ;;
+    *) echo "COMPOSE_PROFILES must select exactly postgres or mysql" >&2; return 2 ;;
+  esac
+  artisan migrate --force
+  compose up -d --remove-orphans
+  health
+  status
+}
+rollback() {
+  local previous="${1:?Usage: ./nge rollback PREVIOUS_IMMUTABLE_TAG}"
+  export IMAGE_TAG="$previous"
+  compose pull core horizon scheduler
+  compose up -d --remove-orphans
+  health
+}
+help() { printf '%s\n' 'Usage: ./nge <doctor|config|db:select|image:build|image:push|pull|up|down|status|health|artisan|psql:cli|mysql:cli|deploy|rollback>'; }
+
+cmd="${1:-help}"; shift || true
+declare -F "$cmd" >/dev/null || { echo "Unknown command: $cmd" >&2; help; exit 2; }
+"$cmd" "$@"

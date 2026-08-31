@@ -1,0 +1,17 @@
+.git
+.github
+.env
+.env.*
+!.env.example
+!.env.example.docker
+node_modules
+vendor
+runtime
+storage/logs/*
+storage/framework/cache/*
+storage/framework/sessions/*
+storage/framework/views/*
+coverage
+Dockerfile*
+docker-compose*.yml
+README.md
