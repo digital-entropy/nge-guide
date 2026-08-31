@@ -4,6 +4,21 @@
 
 Adapt this blueprint to a target application while preserving two supported deployment patterns: full-source host deployment and registry artifact deployment. Do not blindly copy values from the examples.
 
+## Mandatory human interview
+
+When asked to “implement nge-guide” (or equivalent), do not immediately copy the examples. First inspect the target project, summarize what can be inferred, and ask the human to decide:
+
+1. **Full-source/easy** or **container-registry/complex** deployment.
+2. **PostgreSQL** or **MySQL**.
+3. Target environment(s), domain/port, and TLS termination point.
+4. Required queue workers, scheduler, cache, uploads, and other persistent paths.
+5. Migration downtime tolerance and rollback expectations.
+6. For registry mode: registry coordinates, credentials mechanism, build platform, and immutable tag convention.
+
+Recommend an option when project evidence supports it, but identify it as a recommendation. Do not silently choose the deployment model or database. Ask dependent registry questions only if registry mode is selected.
+
+Once answered, generate a concrete deployment for those choices. Remove unselected alternatives from the target project rather than exposing architecture selection as a routine operator command.
+
 ## Discovery before editing
 
 The agent must inspect and record:
@@ -27,7 +42,7 @@ If any item changes architecture or data safety, ask the operator before impleme
 - Production image is self-contained except explicitly documented persistent/runtime mounts.
 - All long-running application services use one exact image tag/digest per release.
 - Registry tags used for production are immutable; `latest` is not a release identifier.
-- Only one of the `postgres` and `mysql` profiles is selected.
+- The implemented target contains only the approved PostgreSQL or MySQL deployment path; the unused reference stub and CLI helper are removed.
 - DB and cache ports are not publicly published by default.
 - Runtime processes use a non-root user where supported.
 - Logs are bounded by rotation settings.
@@ -56,9 +71,9 @@ If any item changes architecture or data safety, ask the operator before impleme
 - `deploy` must pull, validate config, recreate, migrate once, verify health, and retain the previous image identifier for rollback.
 - If multiple replicas are introduced, migrations require a separate one-shot job/lock.
 
-## Database stubs
+## Database reference stubs
 
-Keep both stubs until the operator selects one, but hide them behind Compose profiles.
+Both stubs exist here only to guide implementation. Ask the human which database will be used, implement that choice, and remove the other database service, volume, profile, environment placeholders, health check, and `nge` CLI helper from the target project.
 
 ### PostgreSQL
 
@@ -76,7 +91,7 @@ Keep both stubs until the operator selects one, but hide them behind Compose pro
 - Add `mysqladmin ping` health check.
 - Decide charset/collation and SQL modes based on application compatibility.
 
-Before cutover, remove ambiguity from production operations: document the chosen profile, driver, backup command, restore drill, and migration procedure.
+Before cutover, remove ambiguity from production operations: document the chosen database, driver, backup command, restore drill, and migration procedure. Database choice must be resolved during agent implementation, not exposed as a routine operator command.
 
 ## Required tests
 

@@ -59,6 +59,8 @@ services:
     depends_on:
       core: {condition: service_healthy}
 
+  # AGENT REFERENCE STUB: ask the human to choose PostgreSQL or MySQL,
+  # then keep one database service and delete the other service/profile/volume.
   postgres:
     image: postgres:17-alpine
     profiles: [postgres]

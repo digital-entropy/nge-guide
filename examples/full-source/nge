@@ -16,15 +16,8 @@ load_env() {
 compose() { load_env; docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" "$@"; }
 doctor() { command -v docker >/dev/null; docker compose version; [[ -f Dockerfile && -f nginx.conf ]]; }
 config() { compose config; }
-db:select() {
-  local db="${1:-}"
-  case "$db" in
-    postgres) export COMPOSE_PROFILES=postgres DB_CONNECTION=pgsql DB_HOST=postgres DB_PORT=5432 ;;
-    mysql) export COMPOSE_PROFILES=mysql DB_CONNECTION=mysql DB_HOST=mysql DB_PORT=3306 ;;
-    *) echo "Usage: ./nge db:select postgres|mysql" >&2; return 2 ;;
-  esac
-  echo "Selected $db for this command shell. Persist matching values in $ENV_FILE."
-}
+# AGENT TODO: after asking the human which DB is required, keep exactly
+# one CLI helper below and delete the unused database implementation.
 up() { compose up -d --build "$@"; }
 down() { compose down "$@"; }
 status() { compose ps; }
@@ -44,7 +37,7 @@ code:update() {
   compose up -d
   health
 }
-help() { printf '%s\n' 'Usage: ./nge <doctor|config|db:select|up|down|status|health|shell|artisan|composer|pnpm|psql:cli|mysql:cli|install|code:update>'; }
+help() { printf '%s\n' 'Usage: ./nge <doctor|config|up|down|status|health|shell|artisan|composer|pnpm|DB-CLI|install|code:update>'; }
 
 cmd="${1:-help}"; shift || true
 declare -F "$cmd" >/dev/null || { echo "Unknown command: $cmd" >&2; help; exit 2; }
