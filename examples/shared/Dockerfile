@@ -33,6 +33,6 @@ COPY --from=frontend --chown=${APP_UID}:${APP_GID} /var/www/public/build /var/ww
 RUN mkdir -p storage/framework/cache storage/framework/sessions storage/framework/views bootstrap/cache \
     && chown -R ${APP_UID}:${APP_GID} storage bootstrap/cache
 USER ${APP_USER}
-EXPOSE 80
-HEALTHCHECK --interval=10s --timeout=3s --retries=12 CMD curl -fsS http://127.0.0.1/healthz || exit 1
-CMD ["/runner.sh"]
+EXPOSE 8000
+HEALTHCHECK --interval=10s --timeout=3s --retries=12 CMD curl -fsS http://127.0.0.1:8000/healthz || exit 1
+CMD ["php", "artisan", "octane:start", "--server=swoole", "--host=0.0.0.0", "--port=8000"]

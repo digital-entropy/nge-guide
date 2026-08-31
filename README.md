@@ -1,9 +1,9 @@
 # NGE Deployment Guide for Laravel
 
 > [!IMPORTANT]
-> **THIS GUIDE IS SPECIFICALLY FOR LARAVEL APPLICATIONS.** It assumes Laravel Artisan, Composer, a Vite/PNPM frontend, Laravel Horizon-style queue workers, Laravel's scheduler, and Laravel writable paths such as `storage/` and `bootstrap/cache/`.
+> **THIS GUIDE IS SPECIFICALLY FOR LARAVEL APPLICATIONS. LARAVEL OCTANE WITH SWOOLE IS THE REQUIRED APPLICATION RUNTIME.** The implementing agent must install, configure, and verify Octane + Swoole automatically; it must not ask the human to choose a PHP application server. The guide also covers Artisan, Composer, Vite/PNPM, optional Laravel Horizon queue workers, Laravel's scheduler, and writable paths such as `storage/` and `bootstrap/cache/`.
 
-This is an agent-oriented blueprint for adding a repeatable Docker deployment to a **Laravel project**. It deliberately contains generic Laravel examples, not a turnkey application. An implementation agent must inspect the target Laravel version and architecture, replace placeholders, ask the human for deployment and database choices, and validate the result before deployment.
+This is an agent-oriented blueprint for adding a repeatable Docker deployment to a **Laravel project running Laravel Octane with Swoole**. It deliberately contains generic Laravel examples, not a turnkey application. An implementation agent must inspect the target Laravel version and architecture, replace placeholders, ask the human for deployment, database, and optional-service choices, automatically integrate Octane + Swoole, and validate the result before deployment.
 
 It is not a generic PHP, Symfony, WordPress, Node.js, or framework-neutral Docker guide. Agents must not apply it unchanged to non-Laravel repositories.
 
@@ -159,7 +159,8 @@ the agent must first confirm that the target is Laravel, inspect its structure, 
 2. **Database:** PostgreSQL or MySQL?
 3. **Environment:** local/development, staging, production, or more than one?
 4. **Registry details** (registry mode only): registry hostname, image namespace/name, target platform, authentication mechanism, and tagging policy.
-5. **Runtime details:** public port/domain, TLS boundary, persistent upload paths, queue/scheduler requirements, and acceptable migration downtime.
+5. **Laravel Horizon:** does the application use queues, and should the agent install/configure Horizon or preserve an existing Horizon setup?
+6. **Runtime details:** public port/domain, TLS boundary, persistent upload paths, scheduler requirements, and acceptable migration downtime.
 
 The agent should recommend a default based on evidence from the project, but must not silently decide the deployment model or database. Questions whose answers depend on the selected deployment model should be asked after that selection.
 
@@ -169,11 +170,46 @@ Example first response after inspecting the target:
 >
 > 1. Full-source/easy deployment, or container-registry deployment?
 > 2. PostgreSQL, or MySQL?
-> 3. Which environment and public domain/port is this for?
+> 3. Does this Laravel application need queue processing with Horizon?
+> 4. Which environment and public domain/port is this for?
 >
-> If you choose registry deployment, I will then ask for the registry and immutable image-tag details.
+> I will install and configure Laravel Octane with Swoole automatically. If you choose registry deployment, I will then ask for the registry and immutable image-tag details.
 
 After receiving the answers, the agent implements only the chosen production database service and adapts `nge`, Compose, Dockerfile, environment example, and deployment documentation accordingly. The PostgreSQL/MySQL sections in this repository are reference stubs for the agent—not a runtime database selector that must be shipped to humans.
+
+## Required Laravel Octane + Swoole integration
+
+Octane + Swoole is mandatory for every implementation of this guide. The agent must not merely select an image whose name contains `octane`; it must prove that the target Laravel application and runtime are configured correctly.
+
+The agent must:
+
+1. Inspect `composer.json`, `composer.lock`, Laravel version, PHP constraints, and existing Octane configuration.
+2. Install a Laravel-version-compatible `laravel/octane` package with Composer when it is absent.
+3. Run the appropriate noninteractive Octane installation/publish command for Swoole, or create the equivalent reviewed configuration if the project's Laravel/Octane version lacks that exact command.
+4. Ensure the container PHP runtime has a compatible Swoole extension and verify it with `php --ri swoole` (or equivalent module/version inspection).
+5. Start the web process explicitly as Octane with Swoole, binding to all container interfaces, for example:
+
+   ```bash
+   php artisan octane:start --server=swoole --host=0.0.0.0 --port=8000
+   ```
+
+   The agent must adapt workers, task workers, max requests, and port to the target and base image instead of copying these values blindly.
+6. Point the Nginx `core` upstream and container health check at the actual Octane port.
+7. Add an Octane-safe application review: detect request-to-request mutable singleton/static state, stale authenticated/request data, unsafe service-container captures, and resources that need reset/termination hooks.
+8. Ensure migrations, cache preparation, `storage:link`, and optimization commands run as one-shot deployment steps—not once per Octane worker start.
+9. Verify Octane boots under Swoole, serves HTTP through the gateway, survives container recreation, and processes multiple sequential requests without leaking request-specific state.
+10. Document the effective Octane/Swoole versions and tuning values in the implementation handoff.
+
+If a compatible Swoole runtime cannot be built or Octane cannot boot, the agent must stop and report the blocker. It must not silently fall back to PHP-FPM, FrankenPHP, RoadRunner, or Laravel's development server.
+
+## Laravel Horizon decision
+
+Horizon is intentionally different from Octane: the agent **must ask** whether the application requires queue processing.
+
+- If queues are required and Horizon is approved, install/configure a compatible `laravel/horizon`, generate or preserve `config/horizon.php`, add the `horizon` service, make it use the same application image/release as `core`, and verify supervisors and queue processing.
+- If the project already uses Horizon, preserve its queue names, balancing strategy, retry/timeout values, and process sizing unless the human approves changes.
+- If queues are required but Horizon is declined, ask which queue-worker strategy to implement and document it.
+- If queues are not required, remove the Horizon service and all unused Horizon assumptions from Compose and `nge`.
 
 ## Choose one deployment mode
 

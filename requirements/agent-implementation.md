@@ -1,6 +1,6 @@
 # Laravel agent implementation requirements
 
-> **Scope: Laravel only.** Confirm the target repository is a Laravel application before using this guide. The examples assume `artisan`, Composer, Laravel migrations, Laravel queue/scheduler commands, and Laravel writable directories. Stop and tell the human if the target is not Laravel rather than forcing these templates onto another framework.
+> **Scope: Laravel with Octane + Swoole.** Confirm the target repository is Laravel, then automatically install and configure Laravel Octane with the Swoole server. Octane + Swoole is an invariant of this guide, not a human-choice question. The examples also assume `artisan`, Composer, Laravel migrations, Laravel scheduler commands, and Laravel writable directories. Stop and tell the human if the target is not Laravel.
 
 ## Mission
 
@@ -12,14 +12,33 @@ When asked to “implement nge-guide” (or equivalent), do not immediately copy
 
 1. **Full-source/easy**, **container-registry/complex**, or a deliberate **hybrid** like `loket.pay` that supports both from one Laravel repository.
 2. **PostgreSQL** or **MySQL**.
-3. Target environment(s), domain/port, and TLS termination point.
-4. Required queue workers, scheduler, cache, uploads, and other persistent paths.
-5. Migration downtime tolerance and rollback expectations.
-6. For registry mode: registry coordinates, credentials mechanism, build platform, and immutable tag convention.
+3. Whether the application needs queue processing and Laravel Horizon. Preserve an existing Horizon setup unless changes are approved.
+4. Target environment(s), domain/port, and TLS termination point.
+5. Required scheduler, cache, uploads, and other persistent paths.
+6. Migration downtime tolerance and rollback expectations.
+7. For registry mode: registry coordinates, credentials mechanism, build platform, and immutable tag convention.
 
 Recommend an option when project evidence supports it, but identify it as a recommendation. Do not silently choose the deployment model or database. Ask dependent registry questions only if registry mode is selected.
 
 Once answered, generate a concrete deployment for those choices. Remove unselected alternatives from the target project rather than exposing architecture selection as a routine operator command.
+
+Do **not** ask which application runtime to use. Install and configure Laravel Octane with Swoole automatically.
+
+## Mandatory Octane + Swoole implementation
+
+1. Inspect Laravel/PHP constraints and existing `laravel/octane` state.
+2. Install a compatible `laravel/octane` when absent and configure the Swoole server noninteractively.
+3. Use a container runtime with a compatible Swoole PHP extension; prove the loaded extension and version.
+4. Make the core command execute `artisan octane:start --server=swoole`, bind to `0.0.0.0`, and expose a deliberate internal port.
+5. Align Nginx upstream and health checks with that internal Octane port.
+6. Review the Laravel application for long-lived-worker hazards and add appropriate reset/termination behavior.
+7. Keep migrations and other one-shot deployment work outside the Octane process start command.
+8. Test boot, gateway HTTP, health, restart behavior, and repeated requests for state leakage.
+9. Never silently fall back to another PHP application server.
+
+## Horizon decision and implementation
+
+Ask the human whether queue processing/Horizon is required. If approved, install or preserve a compatible Horizon setup, use the same release image as core, configure Redis/queues/supervisors, and prove a queued smoke job is processed. If Horizon is not required, remove its service and commands. If queues are required without Horizon, ask for the desired worker strategy.
 
 ## Discovery before editing
 
