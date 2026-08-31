@@ -10,7 +10,7 @@ Adapt this blueprint to a target Laravel application while preserving two suppor
 
 When asked to “implement nge-guide” (or equivalent), do not immediately copy the examples. First inspect the target project, summarize what can be inferred, and ask the human to decide:
 
-1. **Full-source/easy** or **container-registry/complex** deployment.
+1. **Full-source/easy**, **container-registry/complex**, or a deliberate **hybrid** like `loket.pay` that supports both from one Laravel repository.
 2. **PostgreSQL** or **MySQL**.
 3. Target environment(s), domain/port, and TLS termination point.
 4. Required queue workers, scheduler, cache, uploads, and other persistent paths.

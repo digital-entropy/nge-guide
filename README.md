@@ -7,63 +7,131 @@ This is an agent-oriented blueprint for adding a repeatable Docker deployment to
 
 It is not a generic PHP, Symfony, WordPress, Node.js, or framework-neutral Docker guide. Agents must not apply it unchanged to non-Laravel repositories.
 
-## Repository directory structure
+## Expected Laravel project structure after implementation
+
+This guide adds deployment files **to the root of an existing Laravel repository**. It does not create a separate deployment subproject. A resulting Laravel project may deliberately support full-source and registry deployment together, as `loket.pay` does.
 
 ```text
-nge-guide/
-├── README.md
-│   └── Entry point for humans and agents: Laravel scope, required
-│       interview, deployment-mode comparison, and verification rules.
-├── requirements/
-│   └── agent-implementation.md
-│       └── Mandatory agent contract: Laravel discovery, human questions,
-│           invariants, implementation rules, tests, and handoff content.
-└── examples/
-    ├── full-source/
-    │   ├── .dockerignore
-    │   │   └── Example exclusions for a Laravel build context.
-    │   ├── .env.example.docker
-    │   │   └── Safe Laravel/Compose environment-variable template.
-    │   ├── Dockerfile
-    │   │   └── Laravel PHP runtime plus Composer and Vite asset stages.
-    │   ├── docker-compose.yml
-    │   │   └── Easy deployment with the Laravel checkout bind-mounted.
-    │   ├── nge
-    │   │   └── Laravel operator commands wrapping Compose, Artisan,
-    │   │       Composer, PNPM, migrations, health, and code updates.
-    │   ├── nginx.conf
-    │   │   └── Nginx gateway forwarding requests to the Laravel core.
-    │   └── runtime/.gitkeep
-    │       └── Placeholder for runtime state when an implementation needs it.
-    ├── registry/
-    │   ├── .dockerignore
-    │   │   └── Excludes Laravel secrets, dependencies, and runtime data.
-    │   ├── .env.example.docker
-    │   │   └── Laravel runtime plus registry/image coordinates.
-    │   ├── Dockerfile
-    │   │   └── Self-contained production Laravel image example.
-    │   ├── ci-build-push.example.yml
-    │   │   └── Example GitHub Actions image build and registry push.
-    │   ├── docker-compose.yml
-    │   │   └── Pull-only runtime deployment with no source-code mount.
-    │   ├── nge
-    │   │   └── Laravel image build, push, deploy, migrate, health, and
-    │   │       immutable-tag rollback commands.
-    │   ├── nginx.conf
-    │   │   └── Runtime Nginx gateway configuration.
-    │   └── runtime/.gitkeep
-    │       └── Parent for persistent `storage` and `bootstrap/cache` mounts.
-    └── shared/
-        ├── .dockerignore
-        ├── Dockerfile
-        └── nginx.conf
-            └── Canonical generic Laravel building blocks copied into and
-                customized within the selected deployment implementation.
+laravel-application/
+├── app/                         # Existing Laravel application code
+├── bootstrap/
+│   └── cache/                   # Writable Laravel runtime cache
+├── config/                      # Laravel configuration
+├── database/                    # Migrations, factories, and seeders
+├── public/                      # Public entry point and compiled assets
+├── resources/                   # Blade/Vue/JS/CSS source
+├── routes/                      # Laravel routes
+├── storage/                     # Logs, uploads, sessions, framework state
+├── tests/                       # Laravel tests
+├── artisan
+├── composer.json
+├── composer.lock
+├── package.json
+├── pnpm-lock.yaml
+│
+├── nge                          # ONE interface for both deployment paths:
+│                                # Compose, Artisan, Composer, PNPM, updates,
+│                                # image build/push, migrations, health, reload
+│
+├── docker-compose.yml           # Full-source/server deployment: builds a thin
+│                                # runtime image and bind-mounts ./:/var/www
+├── docker-compose.local.yml     # Optional local/development Compose variant
+│                                # with developer tooling and exposed DB/cache
+│
+├── Dockerfile                   # Registry build: multi-stage Composer + Vite
+│                                # build producing a self-contained Laravel image
+├── .dockerignore                # Excludes .env, Git data, dependencies, logs,
+│                                # and runtime artifacts from image context
+├── .env.example.docker          # Safe Docker/Laravel environment contract
+│
+├── .docker/
+│   ├── image/
+│   │   ├── Dockerfile           # Thin runtime image for source-mounted Compose
+│   │   └── local/
+│   │       ├── Dockerfile       # Optional development runtime image
+│   │       └── conf.d/          # Optional PHP/Xdebug configuration
+│   └── matter/
+│       ├── gateway/
+│       │   └── nginx.conf       # Nginx → Laravel core configuration
+│       ├── psysh/               # Optional persistent PsySH configuration
+│       └── sentry-relay/        # Optional Sentry Relay configuration
+│
+└── .github/
+    └── workflows/
+        ├── image.yml            # Build/push commit-tagged registry image
+        └── deploy.yml           # Optional remote deployment using ./nge
 ```
+
+Optional paths such as Xdebug, PsySH, Horizon, Redis, Sentry Relay, or frontend tooling should be generated only when the target Laravel application uses them.
+
+### Hybrid deployment, like `loket.pay`
+
+Full-source and registry deployment can coexist in one Laravel repository:
+
+| File/path | Full-source responsibility | Registry responsibility |
+|---|---|---|
+| `nge` | Compose, Composer, PNPM, Artisan, source update, migration, and reload commands | Image build/push plus pull/deploy/rollback commands |
+| `docker-compose.yml` | Builds a thin runtime and bind-mounts the Laravel checkout | A registry-specific variant references the published image and mounts only runtime state |
+| `docker-compose.local.yml` | Local development with source mounts and developer services | Normally unused on a registry deployment host |
+| `.docker/image/Dockerfile` | Small PHP runtime because source comes from the host | Not the final release artifact |
+| root `Dockerfile` | Not required for ordinary source-mounted startup | Builds the self-contained Laravel release image with Composer dependencies and compiled frontend assets |
+| `.docker/matter/` | Nginx and optional runtime/development configuration | External runtime configuration where appropriate |
+| `.env.example.docker` | Laravel and Compose variables for source deployment | Registry/image/runtime variables when registry deployment is enabled |
+| `.github/workflows/` | May invoke `./nge code:update` on remote source checkouts | Builds, tags, pushes, and deploys immutable images |
+
+The critical difference is where application code comes from:
+
+```yaml
+# Full-source: code comes from the deployment host checkout
+volumes:
+  - ./:/var/www
+```
+
+```yaml
+# Registry: code comes from the immutable image; only state is mounted
+volumes:
+  - ./runtime/storage:/var/www/storage
+  - ./runtime/bootstrap-cache:/var/www/bootstrap/cache
+```
+
+Never add `./:/var/www` to registry deployment: it hides the application, dependencies, and compiled assets baked into the image.
+
+### Target states the agent may generate
+
+1. **Full-source only:** root `nge`, source-mounted Compose, thin `.docker/image/Dockerfile`, Nginx config, and `.env.example.docker`.
+2. **Registry only:** root `nge`, immutable root `Dockerfile`, pull-only Compose, runtime-state mounts, registry workflow, Nginx config, and `.env.example.docker`.
+3. **Hybrid:** both build paths in the same Laravel repository, with explicitly named Compose files and commands so source mounts cannot accidentally replace registry image contents.
+
+For hybrid deployment, the agent must ask which Compose filename is authoritative for each environment and document exact commands for local development, source-server deployment, image build, registry deployment, and rollback.
+
+## How this guide maps into the Laravel project
+
+The `examples/` directories are agent reference material. They are not intended to remain as a parallel directory tree beside the Laravel application.
+
+| Guide reference | Destination in the Laravel project |
+|---|---|
+| example `nge` scripts | Merge and adapt into root `./nge` |
+| selected Compose example | Root `./docker-compose.yml`, or explicitly named by deployment mode |
+| shared/registry `Dockerfile` | Root `./Dockerfile` for registry builds |
+| thin source runtime image | `./.docker/image/Dockerfile` |
+| local runtime image/config | `./.docker/image/local/` |
+| gateway `nginx.conf` | `./.docker/matter/gateway/nginx.conf` |
+| selected `.env.example.docker` | Root `./.env.example.docker` |
+| registry workflow example | `./.github/workflows/image.yml` or equivalent |
+
+Every path referenced by Compose must match the generated target tree.
+
+### Relationship to `loket.pay`
+
+This architecture was derived from the inspected `loket.pay` Laravel repository: source-mounted Compose workflows, a thin Compose runtime image, a separate multi-stage registry Dockerfile, one shared `nge` interface, `.docker/matter/` gateway configuration, and GitHub deployment automation. Project names, credentials, domains, and application-specific behavior are intentionally excluded.
+
+## Structure of this guide repository
+
+`examples/full-source/`, `examples/registry/`, and `examples/shared/` contain source material for implementing the target structure above. Each mode is complete enough to study independently; shared files identify common Laravel building blocks. Agents must not leave unresolved alternatives or conflicting example files in the target project.
 
 ### Why examples are duplicated
 
-Each deployment-mode directory is intentionally copyable as a starting package. `examples/shared/` identifies the canonical concepts common to both modes, while each mode contains a complete working reference that an agent can copy and then customize inside a Laravel repository. An implementation should select **one** mode; it should not install both Compose files into the target project unless the human explicitly requests both.
+Each mode is a copyable reference. The final Laravel project may use one mode or an intentional hybrid, according to the human's choice.
 
 ## Deliverables
 
